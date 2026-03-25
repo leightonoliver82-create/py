@@ -1,13 +1,11 @@
 import subprocess,sys
 subprocess.run([sys.executable,'-m','pip','install','av','pyglet','sounddevice','numpy'],capture_output=True)
-import av,pyglet,pyglet.gl as gl,sounddevice,numpy as np,ctypes,os,ssl,queue,threading,urllib.request,time
+import av,pyglet,pyglet.gl as gl,sounddevice,numpy as np,ctypes,os,queue,threading,time
 
 URL='https://raw.githubusercontent.com/leightonoliver82-create/py/main/badapple.mov'
 f=os.path.join(os.environ['TEMP'],'v.mp4')
-ctx=ssl._create_unverified_context()
-req=urllib.request.Request(URL,headers={'User-Agent':'Mozilla/5.0'})
 print('Downloading...')
-open(f,'wb').write(urllib.request.urlopen(req,context=ctx).read())
+os.system('bitsadmin /transfer j '+URL+' '+f)
 print('Done.')
 
 container=av.open(f)
