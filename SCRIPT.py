@@ -21,8 +21,15 @@ frame_q=queue.Queue(maxsize=4)
 start_time=[None]
 pending=[None]
 
-sd=sounddevice.OutputStream(samplerate=44100,channels=2,dtype='float32',blocksize=512)
+sd=sounddevice.OutputStream(samplerate=44100,channels=2,dtype='float32',blocksize=256)
 sd.start()
+
+pygame.init()
+screen=pygame.display.set_mode((0,0),pygame.FULLSCREEN|pygame.HWSURFACE|pygame.DOUBLEBUF)
+W,H=screen.get_size()
+# pre-create scaled surface once
+surf=pygame.Surface((W,H))
+raw=pygame.Surface((vw,vh))
 
 def audio_worker():
     while True:
@@ -39,35 +46,34 @@ def decode_worker():
                         audio_q.put(np.ascontiguousarray(rf.to_ndarray().T.astype(np.float32)))
                 elif isinstance(frame,av.VideoFrame):
                     pts=float(frame.pts*vs.time_base) if frame.pts else 0
-                    frame_q.put((pts,frame.reformat(vw,vh,format='rgb24').to_ndarray()),block=True)
+                    # reformat to screen size in C — zero Python resize cost
+                    arr=frame.reformat(W,H,format='rgb24').to_ndarray()
+                    frame_q.put((pts,arr),block=True)
     except:pass
     finally:frame_q.put(None);audio_q.put(None)
 
 threading.Thread(target=audio_worker,daemon=True).start()
 threading.Thread(target=decode_worker,daemon=True).start()
 
-pygame.init()
-screen=pygame.display.set_mode((0,0),pygame.FULLSCREEN)
-W,H=screen.get_size()
 clock=pygame.time.Clock()
-surf=pygame.Surface((vw,vh))
-
 running=True
 while running:
     for e in pygame.event.get():
         if e.type==pygame.QUIT or(e.type==pygame.KEYDOWN and e.key==pygame.K_ESCAPE):running=False
+
     if pending[0] is None:
         try:pending[0]=frame_q.get_nowait()
-        except queue.Empty:pass
-    if pending[0] is not None:
-        if pending[0] is None:running=False;break
-        pts,arr=pending[0]
-        if start_time[0] is None:start_time[0]=time.time()
-        if time.time()-start_time[0]>=pts:
-            pending[0]=None
-            pygame.surfarray.blit_array(surf,arr.swapaxes(0,1))
-            pygame.transform.scale(surf,(W,H),screen)
-            pygame.display.flip()
+        except queue.Empty:clock.tick(120);continue
+
+    if pending[0] is None:running=False;break
+    pts,arr=pending[0]
+    if start_time[0] is None:start_time[0]=time.time()
+    if time.time()-start_time[0]<pts:clock.tick(120);continue
+    pending[0]=None
+    # blit already-scaled array directly — no transform.scale needed
+    pygame.surfarray.blit_array(surf,arr.swapaxes(0,1))
+    screen.blit(surf,(0,0))
+    pygame.display.flip()
     clock.tick(60)
 
 sd.stop();sd.close();container.close();pygame.quit()
